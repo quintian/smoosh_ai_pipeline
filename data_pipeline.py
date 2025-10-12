@@ -1,75 +1,145 @@
-import os
-import requests
-import pandas as pd
+# data_pipeline.py
+import os, requests
 from dotenv import load_dotenv
+from ticket_scraper import load_cached_ticket_totals
 
 load_dotenv()
-TM_KEY = os.getenv("TICKETMASTER_API_KEY", "")
 YT_KEY = os.getenv("YOUTUBE_API_KEY", "")
 
-def get_ticketmaster_events(artist: str, size: int = 25) -> pd.DataFrame:
-    """Fetch upcoming events for an artist from Ticketmaster Discovery API."""
-    if not TM_KEY:
-        raise RuntimeError("Missing TICKETMASTER_API_KEY in .env")
-    url = "https://app.ticketmaster.com/discovery/v2/events.json"
-    params = {
-        "apikey": TM_KEY,
-        "keyword": artist,
-        "size": size
-    }
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
-    payload = r.json()
-    events = payload.get("_embedded", {}).get("events", [])
-    if not events:
-        return pd.DataFrame(columns=["event_id","event_name","city","country","venue","start","url"])
-    rows = []
-    for ev in events:
-        venues = ev.get("_embedded", {}).get("venues", [{}])
-        v = venues[0] if venues else {}
-        city = (v.get("city") or {}).get("name")
-        country = (v.get("country") or {}).get("name")
-        venue = v.get("name")
-        start = (ev.get("dates") or {}).get("start", {}).get("dateTime") or (ev.get("dates") or {}).get("start", {}).get("localDate")
-        rows.append({
-            "event_id": ev.get("id"),
-            "event_name": ev.get("name"),
-            "city": city,
-            "country": country,
-            "venue": venue,
-            "start": start,
-            "url": ev.get("url")
-        })
-    return pd.DataFrame(rows)
+# ---------------- YouTube helpers ----------------
+def _safe_int(x):
+    try:
+        return int(x)
+    except Exception:
+        return 0
 
-def get_youtube_channel_stats(channel_id: str) -> dict:
-    """Fetch basic YouTube channel statistics (views, subscribers, videoCount)."""
+def resolve_channel_id(id_or_handle_or_name: str) -> str | None:
+    """
+    Accepts:
+      - 'UC...' (channel ID)  -> returns as-is
+      - '@handle'             -> resolves via search
+      - 'Artist Name'         -> resolves via search
+    Graceful if key missing (returns None).
+    """
+    if not id_or_handle_or_name:
+        return None
+    s = id_or_handle_or_name.strip()
+    if s.startswith("UC") and len(s) >= 10:
+        return s  # already a channel ID
     if not YT_KEY:
-        raise RuntimeError("Missing YOUTUBE_API_KEY in .env")
-    url = "https://www.googleapis.com/youtube/v3/channels"
-    params = {"part": "statistics", "id": channel_id, "key": YT_KEY}
-    r = requests.get(url, params=params, timeout=20)
-    r.raise_for_status()
-    data = r.json().get("items", [])
-    if not data:
-        return {"viewCount": 0, "subscriberCount": 0, "videoCount": 0}
-    stats = data[0].get("statistics", {})
-    return {
-        "viewCount": int(stats.get("viewCount", 0)),
-        "subscriberCount": int(stats.get("subscriberCount", 0)),
-        "videoCount": int(stats.get("videoCount", 0))
-    }
+        return None  # no key to resolve
 
-def compute_simple_metrics(y_stats: dict, events_df: pd.DataFrame) -> dict:
-    """Compute simple artist-level ratios that look like conversions (no user IDs)."""
-    views = y_stats.get("viewCount", 0) or 0
-    subs = y_stats.get("subscriberCount", 0) or 0
-    vids = y_stats.get("videoCount", 0) or 0
-    ev = len(events_df.index) if events_df is not None else 0
-    return {
-        "youtube_views_total": views,
-        "youtube_subscribers": subs,
-        "youtube_videos": vids,
-        "events_listed": ev,
-        "views_per_event": round(views / ev, 2) if ev else None
+    # Use Search API to find most relevant channel
+    try:
+        params = {
+            "part": "snippet",
+            "q": s,                    # works for @handle or name
+            "type": "channel",
+            "maxResults": 1,
+            "key": YT_KEY,
+        }
+        r = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=20)
+        r.raise_for_status()
+        items = r.json().get("items", [])
+        if not items:
+            return None
+        return items[0]["id"]["channelId"]
+    except Exception:
+        return None
+
+def get_youtube_channel_stats(id_or_handle_or_name: str) -> dict:
+    """
+    Fetch lifetime channel stats: views, subscribers, videoCount.
+    If key missing or cannot resolve -> returns zeros (no crash).
+    """
+    if not YT_KEY:
+        return {"viewCount": 0, "subscriberCount": 0, "videoCount": 0}
+
+    cid = resolve_channel_id(id_or_handle_or_name)
+    if not cid:
+        return {"viewCount": 0, "subscriberCount": 0, "videoCount": 0}
+
+    try:
+        url = "https://www.googleapis.com/youtube/v3/channels"
+        params = {"part": "statistics", "id": cid, "key": YT_KEY}
+        r = requests.get(url, params=params, timeout=20)
+        r.raise_for_status()
+        items = r.json().get("items", [])
+        if not items:
+            return {"viewCount": 0, "subscriberCount": 0, "videoCount": 0}
+        st = items[0].get("statistics", {}) or {}
+        return {
+            "viewCount": _safe_int(st.get("viewCount", 0)),
+            "subscriberCount": _safe_int(st.get("subscriberCount", 0)),
+            "videoCount": _safe_int(st.get("videoCount", 0)),
+        }
+    except Exception:
+        return {"viewCount": 0, "subscriberCount": 0, "videoCount": 0}
+
+# ---------------- TouringData 2023 tickets (cached) ----------------
+_TD_2023 = None
+
+def _load_td_cache() -> dict:
+    global _TD_2023
+    if _TD_2023 is None:
+        try:
+            _TD_2023 = load_cached_ticket_totals()  # {ArtistPrettyName: tickets_int}
+        except Exception:
+            _TD_2023 = {}
+    return _TD_2023 or {}
+
+def get_2023_tickets_sold_for_artist(artist: str) -> int:
+    """
+    Lookup 2023 tickets for `artist` from cached TouringData JSON.
+    Exact match first, then fuzzy (case-insensitive contains).
+    """
+    m = _load_td_cache()
+    if not m:
+        return 0
+    # exact
+    for k, v in m.items():
+        if artist.lower() == k.lower():
+            return int(v)
+    # fuzzy
+    al = artist.lower()
+    for k, v in m.items():
+        kl = k.lower()
+        if al in kl or kl in al:
+            return int(v)
+    return 0
+
+# ---------------- Conversions (all in %) ----------------
+def compute_conversions_percent(y_stats: dict, tickets_2023: int) -> dict:
+    """
+    Returns conversion rates as PERCENT values where meaningful.
+    Using lifetime channel aggregates as the YouTube source.
+    """
+    views = _safe_int(y_stats.get("viewCount", 0))
+    subs  = _safe_int(y_stats.get("subscriberCount", 0))
+    # videos not used for %; keep as KPI
+    out = {
+        "views_to_sales_pct": round((tickets_2023 / views) * 100, 6) if views else None,
+        "subs_to_sales_pct":  round((tickets_2023 / subs) * 100, 6) if subs else None,
+        # convenience rates (not %):
+        "sales_per_1m_views": round((tickets_2023 / views) * 1_000_000, 6) if views else None,
+        "sales_per_10k_subs": round((tickets_2023 / subs) * 10_000, 6) if subs else None,
     }
+    return out
+
+# ---------------- Simple CLI test ----------------
+if __name__ == "__main__":
+    import argparse, json
+    ap = argparse.ArgumentParser()
+    ap.add_argument("-a", "--artist", default="Beyoncé")
+    ap.add_argument("-c", "--channel", default="@beyonce")  # handle works
+    args = ap.parse_args()
+
+    print("\n=== data_pipeline quick test ===")
+    tix = get_2023_tickets_sold_for_artist(args.artist)
+    y   = get_youtube_channel_stats(args.channel)
+    conv = compute_conversions_percent(y, tix)
+    print("Tickets 2023:", tix)
+    print("YT stats:", json.dumps(y, indent=2))
+    print("Conversions:", json.dumps(conv, indent=2))
+
+
