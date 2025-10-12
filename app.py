@@ -1,4 +1,4 @@
-# app.py — Present-only dashboard (Tickets 2023 + YouTube lifetime + % conversions)
+# app.py — Light Mode (formatted % to 2 decimals)
 import os
 import streamlit as st
 from dotenv import load_dotenv
@@ -9,13 +9,26 @@ dp = importlib.import_module("data_pipeline")
 
 st.set_page_config(page_title="2023 Artist Conversions — YouTube × TouringData", layout="wide")
 st.title("2023 Artist Conversions — YouTube × TouringData")
+st.caption("Mode: Light (lifetime YouTube stats)")
 
 with st.sidebar:
     st.header("Inputs")
     artist = st.text_input("Artist name", value="Beyoncé")
-    # Accept ID, @handle, or name (resolver inside data_pipeline)
-    yt_channel_input = st.text_input("YouTube (ID / @handle / name)", value="@beyonce")
+    # Accepts UC… channel ID or @handle (your pipeline resolves @handle without using Search API)
+    yt_channel_input = st.text_input("YouTube (ID / @handle)", value="@beyonce")
     go = st.button("Show Data")
+
+def fmt_pct(v):
+    """Render percentages to 2 decimals like 9.74% (or '-' if missing)."""
+    if v is None:
+        return "-"
+    try:
+        return f"{float(v):.2f}%"
+    except Exception:
+        return "-"
+
+def fmt_num(v):
+    return "-" if v in (None, 0) else f"{int(v):,}"
 
 if go:
     try:
@@ -23,31 +36,31 @@ if go:
         y_stats = dp.get_youtube_channel_stats(yt_channel_input)
         conv = dp.compute_conversions_percent(y_stats, tickets_2023)
 
+        # KPIs
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Tickets Sold (2023)", "-" if not tickets_2023 else f"{tickets_2023:,}")
-        c2.metric("YouTube Views (lifetime)", f"{y_stats.get('viewCount', 0):,}")
-        c3.metric("Subscribers", f"{y_stats.get('subscriberCount', 0):,}")
-        c4.metric("Videos", f"{y_stats.get('videoCount', 0):,}")
+        c1.metric("Tickets Sold (2023)", fmt_num(tickets_2023))
+        c2.metric("YouTube Views (lifetime)", fmt_num(y_stats.get("viewCount", 0)))
+        c3.metric("Subscribers", fmt_num(y_stats.get("subscriberCount", 0)))
+        c4.metric("Videos", fmt_num(y_stats.get("videoCount", 0)))
 
         st.subheader("Conversion Rates (%)")
         c5, c6 = st.columns(2)
-        v2s = conv.get("views_to_sales_pct")
-        s2s = conv.get("subs_to_sales_pct")
-        c5.metric("Views → Sales (%)", "-" if v2s is None else f"{v2s:,}")
-        c6.metric("Subs → Sales (%)", "-" if s2s is None else f"{s2s:,}")
+        c5.metric("Views → Sales", fmt_pct(conv.get("views_to_sales_pct")))
+        c6.metric("Subs → Sales", fmt_pct(conv.get("subs_to_sales_pct")))
 
         st.subheader("Convenience Ratios")
         c7, c8 = st.columns(2)
-        c7.metric("Sales per 1M Views", "-" if conv.get("sales_per_1m_views") is None else f"{conv['sales_per_1m_views']:,}")
-        c8.metric("Sales per 10k Subs", "-" if conv.get("sales_per_10k_subs") is None else f"{conv['sales_per_10k_subs']:,}")
+        c7.metric("Sales per 1M Views", "-" if conv.get("sales_per_1m_views") is None else f"{conv['sales_per_1m_views']:.2f}")
+        c8.metric("Sales per 10k Subs", "-" if conv.get("sales_per_10k_subs") is None else f"{conv['sales_per_10k_subs']:.2f}")
 
         if not os.getenv("YOUTUBE_API_KEY"):
             st.info("YouTube key not loaded from .env — YouTube numbers may be zero until you add a valid key.")
 
-        st.caption("Tickets from TouringData’s 2023 year-end post (cached). YouTube stats are lifetime channel totals.")
+        st.caption("Tickets from TouringData’s 2023 year-end post (cached). YouTube stats are lifetime channel totals (Light Mode).")
 
     except Exception as e:
         st.error(f"Error: {e}")
+
 
 
 # ----------- original code -------------------
