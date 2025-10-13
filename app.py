@@ -17,6 +17,25 @@ with st.sidebar:
     year = st.number_input("Year (Full Mode)", min_value=2006, max_value=2025, value=2023, step=1, disabled=not full_mode)
     go = st.button("Show Data")
 
+    # ... keep your current imports and setup ...
+
+# def fmt_pct(v):
+#     if v is None: return "-"
+#     try: return f"{float(v):.2f}%"
+#     except: return "-"
+
+# def fmt_num(v):
+#     return "-" if v in (None, 0) else f"{int(v):,}"
+
+# def row(label, value):
+#     st.markdown(
+#         f"<div style='display:flex; justify-content:space-between; border-bottom:1px solid rgba(255,255,255,0.08); padding:6px 0;'>"
+#         f"<div style='font-weight:600;'>{label}</div>"
+#         f"<div style='font-size:22px; font-weight:500;'>{value}</div>"
+#         f"</div>",
+#         unsafe_allow_html=True,
+#     )
+    
 def fmt_pct(v):
     if v is None:
         return "-"
@@ -65,6 +84,24 @@ if go:
             row("Sales per 1M Views", "-" if conv_light.get("sales_per_1m_views") is None else f"{conv_light['sales_per_1m_views']:.2f}")
             row("Sales per 10k Subs", "-" if conv_light.get("sales_per_10k_subs") is None else f"{conv_light['sales_per_10k_subs']:.2f}")
 
+            # inside your `if go:` block, AFTER your current sections:
+            with st.expander("🎧 Spotify (followers & monthly listeners proxy)", expanded=True):
+                sp_followers = dp.spotify_artist_followers(artist)                      # name or artist URL/ID
+                sp_year_streams = dp.spotify_yearly_streams_proxy(artist, True)         # monthly listeners * 12
+                sp_conv = dp.compute_spotify_conversions(tickets_2023, sp_followers, sp_year_streams)
+
+                # Stats (aligned rows)
+                st.subheader("Stats")
+                row("Followers (Spotify)", fmt_num(sp_followers))
+                row("Monthly Listeners (proxy)", fmt_num(sp_conv.get("monthly_listeners", 0)))
+                row("Yearly Streams (proxy = monthly * 12)", fmt_num(sp_year_streams))
+
+                # Conversion Rates
+                st.subheader("Conversion Rates")
+                row("Streams → Followers", fmt_pct(sp_conv.get("streams_to_followers_pct")))
+                row("Followers → Sales",   fmt_pct(sp_conv.get("followers_to_sales_pct")))
+                row("Streams → Sales",     fmt_pct(sp_conv.get("streams_to_sales_pct")))
+            
         else:
             st.caption("Mode: Light (lifetime YouTube stats)")
             y_stats = dp.get_youtube_channel_stats(yt_channel_input)
@@ -80,6 +117,7 @@ if go:
             row("Subs → Sales", fmt_pct(conv.get("subs_to_sales_pct")))
             row("Sales per 1M Views", "-" if conv.get("sales_per_1m_views") is None else f"{conv['sales_per_1m_views']:.2f}")
             row("Sales per 10k Subs", "-" if conv.get("sales_per_10k_subs") is None else f"{conv['sales_per_10k_subs']:.2f}")
+            
 
         if not os.getenv("YOUTUBE_API_KEY"):
             st.info("YouTube key not loaded from .env — YouTube numbers will be zero until you add a valid key.")
@@ -92,6 +130,11 @@ if go:
 
     except Exception as e:
         st.error(f"Error: {e}")
+        
+
+
+
+
 
 
 # # app.py — Light + Full Modes with single-column lists in Full Mode
