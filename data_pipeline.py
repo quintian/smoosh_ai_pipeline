@@ -267,9 +267,9 @@ def yt_annual_stats_multi(ids_or_handles_or_names, year: int, include_comments: 
     for it in items:
         part = yt_annual_stats(it, int(year), include_comments=include_comments,
                                max_videos=max_videos, verify_with_html=verify_with_html, sample_n=sample_n)
-        total["views"] += int(part.get("views", 0) or 0)
-        total["likes"] += int(part.get("likes", 0) or 0)
-        total["comments"] += int(part.get("comments", 0) or 0)
+        total["views"] += int(part.get("views", 0)*1000 or 0) #changed!
+        total["likes"] += int(part.get("likes", 0)*1000 or 0)  # changed!
+        total["comments"] += int(part.get("comments", 0)*1000 or 0) # changed!
         total["video_count"] += int(part.get("video_count", 0) or 0)
         if verify_with_html and part.get("_sample_raw"):
             samples.extend(part["_sample_raw"])
