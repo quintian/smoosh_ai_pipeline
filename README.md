@@ -4,13 +4,13 @@
 The methodology described for matching concert ticket sales and social media engagement metrics (including schema design, data sources, and conversion logic) is proprietary to the author Quinn Tian. It should not be disclosed, redistributed, or reused without any explicit written permission. Furthermore, the methodology may be experimental and not guaranteed to be accurate.
 
 ## Project Goal
-This data pipeline is to demostrate the potential data sources and converstion metrics for "Artist Value Converstion - from social interaction to commercial values".  
+This data pipeline is to demostrate the potential data sources and conversion metrics for Artist Value Converstion - from social interaction to commercial values.  
 
 ## Data Sources
 - **Sales (2023) for Commercial Values:** Scrapes TouringData’s year-end 2023 list and extracts concert's ticket sales total for every artist.
 - **YouTube (2023) for Social Interactions:** Uses Search API to list videos published in 2023 and sums per-video statistics (views/likes/comments).
 - **Spotify Data for music streams:** Uses Spotify Aritist's followers and monthly listeners as streams (in future uses actual plays number as streams).
-- **Note** Because public APIs do not provide some numbers in Json files generated, the Youtube music video's likes and comments count are applied with webscraping*1000, which may not be exact numbers. Spotify monthly listeners number of artists are not scraped yet, which was to represent streams number. If partnering with Spotify, the actually plays of each artist can be obtained as streams values. This draft version is to demostrate the potential data sources and converstion metrics from social interaction to commercial values. Therefore, perfect webscraping is not necessary at this stage. 
+- **Note:** Because public APIs do not provide some numbers in Json files generated, the Youtube music video's likes and comments count are applied with webscraping*1000, which may not be exact numbers. Spotify monthly listeners number of artists are not scraped yet, which was to represent streams number. If partnering with Spotify, the actually plays of each artist can be obtained as streams values. This draft version is to demostrate the potential data sources and converstion metrics from social interaction to commercial values. Therefore, perfect webscraping is not necessary at this stage. 
 
 ## Conversion Metrics
 
