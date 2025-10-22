@@ -7,3 +7,8 @@ lxml
 python-dateutil
 plotly
 
+google-api-python-client
+spotipy
+
+
+
